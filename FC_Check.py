@@ -91,24 +91,100 @@ def get_gh_auth():
   print(f"You must login to github to continue")
   print(f"Enter the code '{user_code}' at:")
   print(f"https://github.com/login/device")
+  print(f"Note: UC = {user_code}")
   print(f"------------------------------------")
   input("Press Enter to continue...\n")
 
   while(1):
     #Check that the toekn has been acessed
-    url = 'https://github.com/login/device/code' 
-    paramaters = f'?client_id={CLIENT_ID}&device_code={token}&grant_type=urn:ietf:params:oauth:grant-type:device_code'
-    r = requests.post(url)
+    url = 'https://github.com/login/oauth/access_token' 
+    paramaters = {"client_id": CLIENT_ID, "device_code": token, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}
+    r = requests.post(url, paramaters)
     
-    print(r.content)
-    
-    time.sleep(1)
-  input()
+    if r.status_code == 200:
+      if "authorization_pending" in str(r.content):
+        print("Waiting for authorization...")
+      else:
+        print("Got token!")
+        break
+    else:
+      print(f"Invalid status seen? See content/status_code: {r.content}, {r.status_code}")
+    time.sleep(5)
 
+  fields = {elem.split("=")[0]: elem.split("=")[1] for elem in str(r.content)[2:-1].split("&")}
+  #print(fields)
 
-  return token
+  return fields["access_token"], fields
 
+def get_gh_classroom(token:str):
+
+  url = f'https://api.github.com/classrooms' 
+  paramaters = {"page":1, "per_page":100}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  r = requests.get(url, paramaters, headers=headers)
+
+  if(r.status_code != 200):
+    print("Error:", r.content, r.status_code)
+    exit()
+
+  rjson = r.json()
+
+  print(f"#\tID\tName")
+  for i, rdict in enumerate(rjson):
+    print(f"{i}.\t{rdict['id']}\t{rdict['name']}")
+  idx = int(input("Select index: "))
+
+  return rjson[idx]['id']
+
+  return None
+
+def get_gh_assignment(token:str, classroom_id : str):
+
+  url = f'https://api.github.com/classrooms/{classroom_id}/assignments' 
+  paramaters = {"page":1, "per_page":100}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  r = requests.get(url, paramaters, headers=headers)
+
+  if(r.status_code != 200):
+    print("Error:", r.content, r.status_code)
+    exit()
+
+  rjson = r.json()
+
+  print(f"#\tID\tName")
+  for i, rdict in enumerate(rjson):
+    print(f"{i}.\t{rdict['id']}\t{rdict['title']}")
+  idx = int(input("Select index: "))
+
+  print(rjson[idx]['id'])
+
+  return rjson[idx]['id']
+
+def get_gh_assignment_json(token: str, assignment_id: str):
+  """
+  Attempts to load an assignment by id
+  """
+
+  url = f'https://api.github.com/assignments/{assignment_id}' 
+  paramaters = {"page":1, "per_page":100}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  r = requests.get(url, paramaters, headers=headers)
+
+  print(r.content, r.status_code, r.json())
+
+  url = f'https://api.github.com/assignments/{assignment_id}/accepted_assignments' 
+  paramaters = {"page":1, "per_page":100}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  r = requests.get(url, paramaters, headers=headers)
+
+  print(r.content, r.status_code, r.json())
 
 if __name__ == "__main__":
 	
-  get_gh_auth()
+  ghu_token, ghu_res = get_gh_auth()
+
+  gh_c_id = get_gh_classroom(ghu_token)
+
+  gh_a_id = get_gh_assignment(ghu_token, gh_c_id)
+
+  get_gh_assignment_json(ghu_token, gh_a_id)
