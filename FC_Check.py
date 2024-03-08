@@ -112,11 +112,15 @@ def get_gh_auth():
     time.sleep(5)
 
   fields = {elem.split("=")[0]: elem.split("=")[1] for elem in str(r.content)[2:-1].split("&")}
-  #print(fields)
+  print(fields)
+  print(fields["access_token"])
 
   return fields["access_token"], fields
 
 def get_gh_classroom(token:str):
+  """
+  Shows the user all github classrooms they are a part of to have them select one 
+  """
 
   url = f'https://api.github.com/classrooms' 
   paramaters = {"page":1, "per_page":100}
@@ -136,9 +140,10 @@ def get_gh_classroom(token:str):
 
   return rjson[idx]['id']
 
-  return None
-
 def get_gh_assignment(token:str, classroom_id : str):
+  """
+  Shows the user all github assignments a classrooms has to select one 
+  """
 
   url = f'https://api.github.com/classrooms/{classroom_id}/assignments' 
   paramaters = {"page":1, "per_page":100}
@@ -174,7 +179,7 @@ def get_gh_assignment_json(token: str, assignment_id: str):
 
   url = f'https://api.github.com/assignments/{assignment_id}/accepted_assignments' 
   paramaters = {"page":1, "per_page":100}
-  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"token {token}", "X-GitHub-Api-Version":"2022-11-28"}
   r = requests.get(url, paramaters, headers=headers)
 
   print(r.content, r.status_code, r.json())
