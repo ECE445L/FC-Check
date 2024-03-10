@@ -1,3 +1,0 @@
-XLRD 
-Requests 
-Pyton 3.11.1

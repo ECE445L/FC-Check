@@ -1,6 +1,18 @@
-import requests
-import openpyxl
 import time
+import requests
+import logging, sys
+import openpyxl
+
+# TUI Library
+from rich.prompt import Prompt
+from rich import print
+from rich.panel import Panel
+from rich.console import Console
+from rich.table import Table
+from rich.prompt import Prompt,IntPrompt
+
+# DEBUG Flag that utilizes logging to print to stdout debug info
+DEBUG = False 
 
 APP_ID    = "846098"
 CLIENT_ID = "Iv1.f82874f4aab1a1f8"
@@ -72,7 +84,7 @@ r = requests.post(url, data=payload, headers=headers)
 
 """
 
-def get_gh_auth():
+def get_gh_auth() -> tuple[str, dict[str, str]]:
   """
   Attempts to get and return a Github user token
   """
@@ -89,32 +101,32 @@ def get_gh_auth():
   print(f"")
   print(f"------------------------------------")
   print(f"You must login to github to continue")
-  print(f"Enter the code '{user_code}' at:")
-  print(f"https://github.com/login/device")
-  print(f"Note: UC = {user_code}")
+  print(f"Enter the code '{user_code}'")
+  print(f"at https://github.com/login/device")
+  print(f"Note: UC = '{user_code}'")
   print(f"------------------------------------")
-  input("Press Enter to continue...\n")
 
-  while(1):
-    #Check that the toekn has been acessed
-    url = 'https://github.com/login/oauth/access_token' 
-    paramaters = {"client_id": CLIENT_ID, "device_code": token, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}
-    r = requests.post(url, paramaters)
-    
-    if r.status_code == 200:
-      if "authorization_pending" in str(r.content):
-        print("Waiting for authorization...")
+  # Awaits for user to autheticate the app on GH. Prints a spinner animation
+  console = Console()
+  with console.status("[bold green]Waiting for authorization...") as status:
+    while(1):
+      #Check that the toekn has been acessed
+      url = 'https://github.com/login/oauth/access_token' 
+      parameters = {"client_id": CLIENT_ID, "device_code": token, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}
+      r = requests.post(url, parameters)
+      
+      if r.status_code == 200:
+        if "authorization_pending" not in str(r.content):
+          break
       else:
-        print("Got token!")
-        break
-    else:
-      print(f"Invalid status seen? See content/status_code: {r.content}, {r.status_code}")
-    time.sleep(5)
+        print(f"Invalid status seen? See content/status_code: {r.content}, {r.status_code}\n")
+      time.sleep(5)
 
   fields = {elem.split("=")[0]: elem.split("=")[1] for elem in str(r.content)[2:-1].split("&")}
-  print(fields)
-  print(fields["access_token"])
+  logging.debug(fields)
+  logging.debug(fields["access_token"])
 
+  # TODO: I dont know how long the token is valid; might be good idea to store token to reauths on script rerun
   return fields["access_token"], fields
 
 def get_gh_classroom(token:str):
@@ -123,9 +135,9 @@ def get_gh_classroom(token:str):
   """
 
   url = f'https://api.github.com/classrooms' 
-  paramaters = {"page":1, "per_page":100}
+  parameters = {"page":1, "per_page":100}
   headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
-  r = requests.get(url, paramaters, headers=headers)
+  r = requests.get(url, parameters, headers=headers)
 
   if(r.status_code != 200):
     print("Error:", r.content, r.status_code)
@@ -133,10 +145,19 @@ def get_gh_classroom(token:str):
 
   rjson = r.json()
 
-  print(f"#\tID\tName")
+  # Prints a listing of all the classrooms the user is part of in a table
+  console = Console()
+  table = Table(show_header=True, header_style="bold magenta")
+  table.add_column("Selection", style="dim")
+  table.add_column("Classroom Name")
+  table.add_column("Classroom ID",justify="right")
+
   for i, rdict in enumerate(rjson):
-    print(f"{i}.\t{rdict['id']}\t{rdict['name']}")
-  idx = int(input("Select index: "))
+    table.add_row(str(i),rdict['name'],str(rdict['id']))
+  console.print(table)
+
+  # User selects a classroom
+  idx = IntPrompt.ask("Select a classroom", choices=[str(i) for i in range(len(rjson))])
 
   return rjson[idx]['id']
 
@@ -146,9 +167,9 @@ def get_gh_assignment(token:str, classroom_id : str):
   """
 
   url = f'https://api.github.com/classrooms/{classroom_id}/assignments' 
-  paramaters = {"page":1, "per_page":100}
+  parameters = {"page":1, "per_page":100}
   headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
-  r = requests.get(url, paramaters, headers=headers)
+  r = requests.get(url, parameters, headers=headers)
 
   if(r.status_code != 200):
     print("Error:", r.content, r.status_code)
@@ -156,40 +177,61 @@ def get_gh_assignment(token:str, classroom_id : str):
 
   rjson = r.json()
 
-  print(f"#\tID\tName")
-  for i, rdict in enumerate(rjson):
-    print(f"{i}.\t{rdict['id']}\t{rdict['title']}")
-  idx = int(input("Select index: "))
+  # Prints a listing of all the assignments of the class in a table
+  console = Console()
+  table = Table(show_header=True, header_style="bold magenta")
+  table.add_column("Selection", style="dim")
+  table.add_column("Assignment Title")
+  table.add_column("Assignment ID",justify="right")
 
-  print(rjson[idx]['id'])
+  for i, rdict in enumerate(rjson):
+    table.add_row(str(i),rdict['title'],str(rdict['id']))
+  console.print(table)
+
+  idx = IntPrompt.ask("Select a assignment", choices=[str(i) for i in range(len(rjson))])
 
   return rjson[idx]['id']
 
-def get_gh_assignment_json(token: str, assignment_id: str):
+def get_gh_assignment_info(token: str, assignment_id: str):
   """
   Attempts to load an assignment by id
   """
 
   url = f'https://api.github.com/assignments/{assignment_id}' 
-  paramaters = {"page":1, "per_page":100}
+  parameters = {"page":1, "per_page":100}
   headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
-  r = requests.get(url, paramaters, headers=headers)
+  r = requests.get(url, parameters, headers=headers)
 
-  print(r.content, r.status_code, r.json())
+  rjson = r.json()
+  logging.debug(r.content, r.status_code, rjson)
+
+  print(Panel(
+    f"[bold italic red]Assignment[/]: '{rjson['title']}'\n"
+    f"[bold]Invite Link[/]: '{rjson['invite_link']}'\n"
+    f"[bold]Deadline[/]: '{rjson['deadline']}'\n"
+    f"[bold magenta]Repo count[/]: '{rjson['accepted']}'\n"
+    f"[bold]==========\n"
+    f"[bold green]Classroom[/]: '{rjson['classroom']['url']}'\n"
+    f"[bold green]Starter Code[/]: '{rjson['starter_code_repository']['html_url']}'\n"
+    , title="Assignment"))
 
   url = f'https://api.github.com/assignments/{assignment_id}/accepted_assignments' 
-  paramaters = {"page":1, "per_page":100}
-  headers = {"Accept":"application/vnd.github+json", "Authorization": f"token {token}", "X-GitHub-Api-Version":"2022-11-28"}
-  r = requests.get(url, paramaters, headers=headers)
-
-  print(r.content, r.status_code, r.json())
+  parameters = {"page":1, "per_page":100}
+  headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
+  r = requests.get(url, parameters, headers=headers)
+  rjson = r.json()
+  logging.log(r.content, r.status_code, rjson)
 
 if __name__ == "__main__":
 	
-  ghu_token, ghu_res = get_gh_auth()
+  if(DEBUG): logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+  
+  print(Panel.fit("ECE-445L Fast Code Check"))
 
+  ghu_token, ghu_res = get_gh_auth()
+  
   gh_c_id = get_gh_classroom(ghu_token)
 
   gh_a_id = get_gh_assignment(ghu_token, gh_c_id)
 
-  get_gh_assignment_json(ghu_token, gh_a_id)
+  get_gh_assignment_info(ghu_token, gh_a_id)
