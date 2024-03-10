@@ -1,6 +1,6 @@
 import time
 import requests
-import logging, sys
+import logging, sys, os 
 import openpyxl
 
 # TUI Library
@@ -84,7 +84,7 @@ r = requests.post(url, data=payload, headers=headers)
 
 """
 
-def get_gh_auth() -> tuple[str, dict[str, str]]:
+def get_gh_auth() -> str:
   """
   Attempts to get and return a Github user token
   """
@@ -106,28 +106,54 @@ def get_gh_auth() -> tuple[str, dict[str, str]]:
   print(f"Note: UC = '{user_code}'")
   print(f"------------------------------------")
 
+  current_directory = os.path.dirname(os.path.abspath(__file__))
+  gh_token_path = os.path.join(current_directory, "gh_token")
+  
+  gh_token = ""
+  is_auth = False
   # Awaits for user to autheticate the app on GH. Prints a spinner animation
   console = Console()
   with console.status("[bold green]Waiting for authorization...") as status:
-    while(1):
-      #Check that the toekn has been acessed
+
+
+    # If the app token exists on disk, read it
+    if os.path.exists(gh_token_path):
+      with open(gh_token_path, "r") as file:
+        gh_token = file.read()
+        url = 'https://api.github.com/user' 
+        headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {gh_token}", "X-GitHub-Api-Version":"2022-11-28"}
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200: 
+          is_auth = True
+        else:
+          print("\nToken on disk mismatch. Please visit link above and authorize\n")
+    
+    # Otherwise if the token doesnt exist or was invalid, ask for a new one
+    while(not is_auth):
+
+      #Check that the token has been acessed
       url = 'https://github.com/login/oauth/access_token' 
       parameters = {"client_id": CLIENT_ID, "device_code": token, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}
       r = requests.post(url, parameters)
       
       if r.status_code == 200:
         if "authorization_pending" not in str(r.content):
+          fields = {elem.split("=")[0]: elem.split("=")[1] for elem in str(r.content)[2:-1].split("&")}
+          logging.debug(fields)
+          logging.debug(fields["access_token"])
+          gh_token = fields["access_token"]
+          is_auth = True
           break
       else:
         print(f"Invalid status seen? See content/status_code: {r.content}, {r.status_code}\n")
       time.sleep(5)
 
-  fields = {elem.split("=")[0]: elem.split("=")[1] for elem in str(r.content)[2:-1].split("&")}
-  logging.debug(fields)
-  logging.debug(fields["access_token"])
+  # Writes the token to a file to be reused
+  with open(gh_token_path, "w") as file:
+        # Storing a token in plaintext isnt the smartest idea, but uh, who cares.
+        file.write(gh_token)
 
-  # TODO: I dont know how long the token is valid; might be good idea to store token to reauths on script rerun
-  return fields["access_token"], fields
+  return gh_token
 
 def get_gh_classroom(token:str):
   """
@@ -220,7 +246,7 @@ def get_gh_assignment_info(token: str, assignment_id: str):
   headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
   r = requests.get(url, parameters, headers=headers)
   rjson = r.json()
-  logging.log(r.content, r.status_code, rjson)
+  # logging.log(r.content, r.status_code, rjson)
 
 if __name__ == "__main__":
 	
@@ -228,7 +254,7 @@ if __name__ == "__main__":
   
   print(Panel.fit("ECE-445L Fast Code Check"))
 
-  ghu_token, ghu_res = get_gh_auth()
+  ghu_token = get_gh_auth()
   
   gh_c_id = get_gh_classroom(ghu_token)
 
