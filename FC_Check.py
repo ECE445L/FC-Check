@@ -1,6 +1,8 @@
 import time
 import requests
 import logging, sys, os 
+import importlib.util, inspect
+from typing import List, Tuple
 import openpyxl
 
 # TUI Library
@@ -106,8 +108,8 @@ def get_gh_auth() -> str:
   print(f"Note: UC = '{user_code}'")
   print(f"------------------------------------")
 
-  current_directory = os.path.dirname(os.path.abspath(__file__))
-  gh_token_path = os.path.join(current_directory, "gh_token")
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  gh_token_path = os.path.join(script_dir, "gh_token")
   
   gh_token = ""
   is_auth = False
@@ -248,11 +250,54 @@ def get_gh_assignment_info(token: str, assignment_id: str):
   rjson = r.json()
   # logging.log(r.content, r.status_code, rjson)
 
+
+def load_tests():
+    test_modules = []
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    tests_dir = os.path.join(script_dir, "tests")
+    # Iterate through files in the tests directory
+    for root, dirs, files in os.walk(tests_dir):
+        for file in files:
+            if file.endswith(".py") and file != "__init__.py":  # Exclude __init__.py
+                file_path = os.path.join(root, file)
+                module_name = os.path.splitext(file)[0]  # Module name is file name without extension
+
+                # Dynamically import the module
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+                # Check if the module contains a Test class
+                if hasattr(module, "Test") and inspect.isclass(module.Test):
+                    test_class = module.Test
+                    # Instantiate the Test class to get metadata
+                    test_instance = test_class()
+                    # Append the test module along with its metadata if enabled
+                    if(test_instance.enabled):
+                      test_modules.append((module, test_instance))
+
+    return test_modules
+
+def list_enabled_tests(loaded_tests):
+  console = Console()
+  console.print("\n[bold green italic]The following tests will be run on each students repo")
+  table = Table(show_header=True, header_style="bold magenta")
+  table.add_column("Test Name", style="dim")
+  table.add_column("Description")
+
+  # List the test names and description
+  for test_module, test_instance in test_modules:
+    table.add_row(test_instance.name,test_instance.description)
+  console.print(table)
+
 if __name__ == "__main__":
 	
   if(DEBUG): logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
   
+
   print(Panel.fit("ECE-445L Fast Code Check"))
+
+  # Authetnicates GH user and fetcehs classroom and assignment
 
   ghu_token = get_gh_auth()
   
@@ -261,3 +306,22 @@ if __name__ == "__main__":
   gh_a_id = get_gh_assignment(ghu_token, gh_c_id)
 
   get_gh_assignment_info(ghu_token, gh_a_id)
+
+  # Load all the test modules along with their metadata
+  test_modules = load_tests()
+  list_enabled_tests(test_modules)
+
+  in_start_test = Prompt.ask("[bold] Run tests?", choices=['y','n'])
+
+  if(in_start_test == 'y'):
+    console = Console()
+    print("\n\n\n")
+    print(Panel.fit("[bold]Starting tests"))
+    with console.status("[bold green] Running Tests") as all_tests_status:
+      for test_module, test_instance in test_modules:
+        print(f"\nRunning test: '{test_instance.name}'")
+
+        # TODO: Pass in relevant info to the test. Get a CSV output that can be recorded.
+        test_result = test_instance.run_test()
+        
+        #TODO: Write result to a spreadsheet
