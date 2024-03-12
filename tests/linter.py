@@ -1,5 +1,8 @@
-def runTest() -> list:
-    print("Hello World, this is the linter test!")
+def runTest(repos) -> list:
+    
+    for repo in repos:
+        pass
+
     return []
 
 class Test:

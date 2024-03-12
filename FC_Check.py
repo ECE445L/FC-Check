@@ -4,6 +4,7 @@ import logging, sys, os
 import importlib.util, inspect
 from typing import List, Tuple
 import openpyxl
+from git import Repo
 
 # TUI Library
 from rich.prompt import Prompt
@@ -12,6 +13,7 @@ from rich.panel import Panel
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt,IntPrompt
+from rich.progress import track
 
 # DEBUG Flag that utilizes logging to print to stdout debug info
 DEBUG = False 
@@ -248,13 +250,23 @@ def get_gh_assignment_info(token: str, assignment_id: str):
   headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version":"2022-11-28"}
   r = requests.get(url, parameters, headers=headers)
   rjson = r.json()
+
   # logging.log(r.content, r.status_code, rjson)
+  
+  return rjson
 
 
 def load_tests():
-    test_modules = []
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    tests_dir = os.path.join(script_dir, "tests")
+  """
+  Dynamically loads the tests from the tests folder
+  """
+
+  test_modules = []
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  tests_dir = os.path.join(script_dir, "tests")
+
+  console = Console()
+  with console.status("[bold green] Loading Tests...") as status:
     # Iterate through files in the tests directory
     for root, dirs, files in os.walk(tests_dir):
         for file in files:
@@ -276,7 +288,7 @@ def load_tests():
                     if(test_instance.enabled):
                       test_modules.append((module, test_instance))
 
-    return test_modules
+  return test_modules
 
 def list_enabled_tests(loaded_tests):
   console = Console()
@@ -289,6 +301,39 @@ def list_enabled_tests(loaded_tests):
   for test_module, test_instance in test_modules:
     table.add_row(test_instance.name,test_instance.description)
   console.print(table)
+
+def pull_repos(token, assignment_id,assignment_info):
+  """
+  Pulls all the student repos, clones if it doesn't exist. Returns a list containing repo objects and relevant info. This is fed into tests
+  """
+
+  # Directory to hold repositories
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  clone_path = os.path.join(script_dir, "repos/"+str(assignment_id))
+
+  # Github authentication
+  username = Prompt.ask("[bold] Github Username: ")
+
+  repos = []
+
+  # Clones the students repositories, or pulls latest version if already cloned
+  for repo_info in track(assignment_info,description="Cloning student repositories"):
+    remote = f"https://{username}:{token}@github.com/{repo_info['repository']['html_url'].split('.com/')[1]}"
+    repo_dir = clone_path+"/"+repo_info['repository']['full_name']
+
+    if os.path.exists(repo_dir): # Repo is already cloned, fetch and pull latest changes
+      logging.debug("Fetching and pulling from "+remote)
+      repo = Repo(repo_dir)
+      origin = repo.remotes.origin
+      origin.fetch()
+      origin.pull()
+      repos.append((repo_info,repo_dir,repo))
+    else: # otherwise clone it
+      logging.debug("Cloning from "+remote)
+      repo = Repo.clone_from(remote, repo_dir)
+      repos.append((repo_info,repo_dir,repo))
+  
+  return repos
 
 if __name__ == "__main__":
 	
@@ -305,7 +350,7 @@ if __name__ == "__main__":
 
   gh_a_id = get_gh_assignment(ghu_token, gh_c_id)
 
-  get_gh_assignment_info(ghu_token, gh_a_id)
+  gh_a_info = get_gh_assignment_info(ghu_token, gh_a_id)
 
   # Load all the test modules along with their metadata
   test_modules = load_tests()
@@ -314,14 +359,17 @@ if __name__ == "__main__":
   in_start_test = Prompt.ask("[bold] Run tests?", choices=['y','n'])
 
   if(in_start_test == 'y'):
+
+    # Pulls the latest version of the repos
+    repos = pull_repos(ghu_token,gh_a_id,gh_a_info)
+
     console = Console()
     print("\n\n\n")
     print(Panel.fit("[bold]Starting tests"))
-    with console.status("[bold green] Running Tests") as all_tests_status:
-      for test_module, test_instance in test_modules:
-        print(f"\nRunning test: '{test_instance.name}'")
+    for test_module, test_instance in track(test_modules,description="Running Tests"):
+      print(f"\nRunning test: '{test_instance.name}'")
 
-        # TODO: Pass in relevant info to the test. Get a CSV output that can be recorded.
-        test_result = test_instance.run_test()
-        
-        #TODO: Write result to a spreadsheet
+      # TODO: Pass in relevant info to the test. Get a CSV output that can be recorded.
+      test_result = test_instance.run_test(repos)
+      
+      #TODO: Write result to a spreadsheet
