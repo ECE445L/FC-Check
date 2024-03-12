@@ -1,6 +1,7 @@
 def runTest(repos) -> list:
     
     for repo in repos:
+        repo_info, repo_path, git_repo = repo
         pass
 
     return []
