@@ -124,6 +124,7 @@ def get_gh_auth() -> str:
     if os.path.exists(gh_token_path):
       with open(gh_token_path, "r") as file:
         gh_token = file.read()
+        gh_token = gh_token.split("\n")[0].strip()
         url = 'https://api.github.com/user' 
         headers = {"Accept":"application/vnd.github+json", "Authorization": f"Bearer {gh_token}", "X-GitHub-Api-Version":"2022-11-28"}
         r = requests.get(url, headers=headers)
