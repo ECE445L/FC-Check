@@ -1,5 +1,9 @@
-def runTest() -> list:
-    print("Hello World, this is the linter test!")
+def runTest(repos) -> list:
+    
+    for repo in repos:
+        repo_info, repo_path, git_repo = repo
+        pass
+
     return []
 
 class Test:
