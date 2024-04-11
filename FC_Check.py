@@ -326,6 +326,7 @@ def pull_repos(token, assignment_id,assignment_info):
       repo = Repo(repo_dir)
       origin = repo.remotes.origin
       origin.fetch()
+      # TODO: Maybe account for merge conflicts?
       origin.pull()
       repos.append((repo_info,repo_dir,repo))
     else: # otherwise clone it
