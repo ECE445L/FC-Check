@@ -1,0 +1,1 @@
+cat apt_dependencies.txt | xargs sudo apt-get install

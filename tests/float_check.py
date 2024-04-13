@@ -45,7 +45,7 @@ def runTest(repos) -> list:
         blacklist_repo = [os.path.join(repo_path, path) for path in blacklist]
             
         # List to store files containing floats or doubles
-        files_with_floats_doubles = []\
+        files_with_floats_doubles = []
         
         # Walk through repo and its subdirectories
         # root is current directory being walked, dirs is current subdir, files is files in current walked dir

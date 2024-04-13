@@ -28,7 +28,7 @@ def runTest(repos) -> list:
             else:
                 # If the author doesn't exist, add them to the counter dictionary
                 author_counter[author] = 1
-
+  
     if VISUALIZE:
         table = Table(title="Commit Count")
         table.add_column("Student", style="magenta")
